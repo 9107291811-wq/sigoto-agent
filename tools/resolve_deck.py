@@ -1,7 +1,7 @@
 import csv
+import argparse
 import json
 import re
-import sys
 import unicodedata
 from pathlib import Path
 
@@ -110,11 +110,20 @@ def resolve_item(cards, item):
     )
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Resolve a readable decklist into CABT card IDs.")
+    parser.add_argument("input_root", nargs="?", default="/kaggle/input", help="Folder containing EN card data CSV.")
+    parser.add_argument("--decklist", type=Path, default=DECKLIST_PATH, help="Readable decklist JSON.")
+    parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output deck.csv path.")
+    return parser.parse_args()
+
+
 def main():
-    input_root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/kaggle/input")
+    args = parse_args()
+    input_root = Path(args.input_root)
     csv_path = find_csv(input_root)
     cards = load_cards(csv_path)
-    decklist = json.loads(DECKLIST_PATH.read_text(encoding="utf-8"))
+    decklist = json.loads(args.decklist.read_text(encoding="utf-8"))
 
     deck_ids = []
     print(f"card csv: {csv_path}")
@@ -130,8 +139,9 @@ def main():
     if len(deck_ids) != 60:
         raise ValueError(f"Deck has {len(deck_ids)} cards, expected 60")
 
-    OUTPUT_PATH.write_text("\n".join(str(card_id) for card_id in deck_ids) + "\n", encoding="utf-8")
-    print(f"wrote: {OUTPUT_PATH}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text("\n".join(str(card_id) for card_id in deck_ids) + "\n", encoding="utf-8")
+    print(f"wrote: {args.output}")
 
 
 if __name__ == "__main__":

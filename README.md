@@ -16,9 +16,41 @@ Required submission files at top level:
 - `main.py`
 - `deck.csv`
 - `bot/`
-- `data/`
 
 `main.py` is intentionally thin. Actual logic lives in `bot/`.
+
+## Deck Variants
+
+Deck A and Deck B are separated under `variants/`:
+
+- `variants/deck_a/` is the current baseline deck.
+- `variants/deck_b/` is the second deck workspace.
+
+Each variant owns:
+
+- `decklist.json` readable recipe
+- `deck.csv` resolved 60-card ID list
+- `strategy.md` strategy notes
+- `variant_config.json` variant label
+
+Build separate submission files with:
+
+```powershell
+cd "C:\Users\K\Documents\New project 8\sigoto-agent"
+& "C:\Users\K\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" tools\build_submission.py deck_a
+& "C:\Users\K\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" tools\build_submission.py deck_b
+```
+
+Outputs:
+
+- `dist/deck_a/submission.tar.gz`
+- `dist/deck_b/submission.tar.gz`
+
+To resolve a variant decklist against the official card CSV:
+
+```powershell
+& "C:\Users\K\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" tools\resolve_deck.py data --decklist variants\deck_b\decklist.json --output variants\deck_b\deck.csv
+```
 
 ## Local battle loop
 
