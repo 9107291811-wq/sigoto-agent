@@ -298,6 +298,25 @@ def active_clefairy_can_ko_mega_lucario(card: dict | None, obs_dict: dict) -> bo
     return card_name(card_id(card)) in MEGA_LUCARIO_NAMES and clefairy_damage_to(card, obs_dict) >= total_hp_left(card)
 
 
+def opponent_active_is_mega_lucario(obs_dict: dict) -> bool:
+    if not opponent_active_cards(obs_dict):
+        return False
+    return card_name(card_id(opponent_active_cards(obs_dict)[0])) in MEGA_LUCARIO_NAMES
+
+
+def active_clefairy_needs_basic_for_mega_lucario(obs_dict: dict) -> bool:
+    if not active_cards(obs_dict):
+        return False
+    active = active_cards(obs_dict)[0]
+    return (
+        card_name(card_id(active)) == "clefairy"
+        and opponent_active_is_mega_lucario(obs_dict)
+        and energy_count(active) == 1
+        and has_special_energy(active)
+        and not has_fighting_energy(active)
+    )
+
+
 def active_clefairy_should_leave(obs_dict: dict) -> bool:
     active = active_cards(obs_dict)
     if not active or card_name(card_id(active[0])) != "clefairy":
@@ -812,6 +831,15 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
 
     if required_count <= 0:
         return -2400
+    if (
+        energy_id in FIGHTING_ENERGY_IDS
+        and target == "clefairy"
+        and is_active_card(obs_dict, target_card)
+        and active_clefairy_needs_basic_for_mega_lucario(obs_dict)
+    ):
+        return 12000
+    if energy_id in FIGHTING_ENERGY_IDS and target == "solrock" and active_clefairy_needs_basic_for_mega_lucario(obs_dict):
+        return -9000
     if target == "clefairy" and opponent_has_psychic_lock(obs_dict):
         return -7000
     if target == "okidogi" and existing_count >= 2:
