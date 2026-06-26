@@ -25,6 +25,10 @@ def zone_cards(obs_dict: dict, zone: str) -> list[dict]:
     return [card for card in cards if card]
 
 
+def hand_cards(obs_dict: dict) -> list[dict]:
+    return zone_cards(obs_dict, "hand")
+
+
 def in_play_cards(obs_dict: dict) -> list[dict]:
     return zone_cards(obs_dict, "active") + zone_cards(obs_dict, "bench")
 

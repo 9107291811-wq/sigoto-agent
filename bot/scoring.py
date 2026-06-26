@@ -9,13 +9,12 @@ from .state import (
     energy_count,
     has_species,
     has_species_in_play,
+    hand_cards,
     in_play_cards,
     option_card,
-    option_debug_text,
     option_target,
     rough_hand_count,
     rough_turn,
-    target_name,
     zone_cards,
 )
 
@@ -64,6 +63,68 @@ CARD_BASE = {
 
 def base_card_score(name: str) -> int:
     return CARD_BASE.get(name, 0)
+
+
+def has_energy_in_hand(obs_dict: dict) -> bool:
+    return any(card_id(card) in ENERGY_IDS for card in hand_cards(obs_dict))
+
+
+def has_basic_fighting_in_hand(obs_dict: dict) -> bool:
+    return any(card_id(card) in FIGHTING_ENERGY_IDS for card in hand_cards(obs_dict))
+
+
+def target_energy_need(card: dict | None) -> int:
+    name = card_name(card_id(card))
+    if name in ("okidogi", "clefairy"):
+        return 2
+    if name == "solrock":
+        return 1
+    if name in ("binacle", "barbaracle"):
+        return 1
+    return 0
+
+
+def can_use_any_energy(card: dict | None, obs_dict: dict) -> bool:
+    name = card_name(card_id(card))
+    if name in ("okidogi", "clefairy"):
+        return True
+    if name == "solrock":
+        return has_species_in_play(obs_dict, "lunatone")
+    if name in ("binacle", "barbaracle"):
+        return count_species_in_play(obs_dict, "okidogi") == 0 and count_species_in_play(obs_dict, "clefairy") == 0
+    return False
+
+
+def one_energy_from_attack_ready(obs_dict: dict) -> bool:
+    for card in in_play_cards(obs_dict):
+        if not can_use_any_energy(card, obs_dict):
+            continue
+        name = card_name(card_id(card))
+        attached = attached_energy_ids(card)
+        count = energy_count(card)
+        has_special = any(attached_id in SPECIAL_ENERGY_IDS for attached_id in attached)
+        if name in ("okidogi", "clefairy") and has_special and count == 1:
+            return True
+        if name == "solrock" and count == 0:
+            return True
+    return False
+
+
+def energy_completes_attacker(energy_id: int, target_card: dict | None, obs_dict: dict) -> bool:
+    name = card_name(card_id(target_card))
+    attached = attached_energy_ids(target_card)
+    count = energy_count(target_card)
+    has_special_after = any(attached_id in SPECIAL_ENERGY_IDS for attached_id in attached) or energy_id in SPECIAL_ENERGY_IDS
+    if name in ("okidogi", "clefairy"):
+        return count == 1 and has_special_after
+    if name == "solrock":
+        return count == 0 and has_species_in_play(obs_dict, "lunatone")
+    return False
+
+
+def current_effect_name(obs_dict: dict) -> str:
+    effect = (obs_dict.get("select") or {}).get("effect") or {}
+    return card_name(card_id(effect))
 
 
 def setup_active_score(name: str) -> int:
@@ -140,6 +201,12 @@ def search_card_score(name: str, obs_dict: dict) -> int:
         score += 420
     elif name == "basic_fighting_energy":
         score += 220
+        if (
+            current_effect_name(obs_dict) == "fighting_gong"
+            and not has_energy_in_hand(obs_dict)
+            and one_energy_from_attack_ready(obs_dict)
+        ):
+            score += 3600
     return score
 
 
@@ -149,6 +216,8 @@ def play_score(name: str, obs_dict: dict) -> int:
         score += 600
     if name == "fighting_gong":
         score += 520
+        if not has_energy_in_hand(obs_dict) and one_energy_from_attack_ready(obs_dict):
+            score += 900
     if name == "battle_cage":
         score += 420
     if name == "air_balloon":
@@ -171,16 +240,24 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
 
     target = card_name(card_id(target_card))
     existing_count = energy_count(target_card)
+    required_count = target_energy_need(target_card)
     existing_ids = attached_energy_ids(target_card)
     has_special = any(attached_id in SPECIAL_ENERGY_IDS for attached_id in existing_ids)
     has_fighting = any(attached_id in FIGHTING_ENERGY_IDS for attached_id in existing_ids)
 
+    if required_count <= 0:
+        return -2400
+    if existing_count >= required_count:
+        return -2600
     if existing_count >= 3:
         return -5000
-    if existing_count >= 2:
-        return -2600
 
     score = 0
+    if energy_completes_attacker(int(energy_id), target_card, obs_dict):
+        score += 700 if target == "solrock" else 2200
+        if target_card in zone_cards(obs_dict, "active"):
+            score += 400
+
     if energy_id in SPECIAL_ENERGY_IDS:
         score += 900
         if target == "okidogi":
@@ -189,6 +266,8 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
             score += 1600 if not has_special else -900
         elif target == "solrock":
             score += 120 if existing_count == 0 else -900
+        elif target in ("binacle", "barbaracle"):
+            score += 60 if existing_count == 0 and count_species_in_play(obs_dict, "okidogi") == 0 else -760
         else:
             score -= 360
 
@@ -203,7 +282,7 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
         elif target == "lunatone":
             score -= 600
         elif target in ("binacle", "barbaracle"):
-            score -= 420
+            score += 120 if existing_count == 0 and count_species_in_play(obs_dict, "okidogi") == 0 else -760
         else:
             score -= 260
 
