@@ -19,3 +19,26 @@ Required submission files at top level:
 - `data/`
 
 `main.py` is intentionally thin. Actual logic lives in `bot/`.
+
+## Local battle loop
+
+Run local battles before pushing to GitHub or Kaggle:
+
+```powershell
+cd "C:\Users\K\Documents\New project 8\sigoto-agent"
+& "C:\Users\K\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" tools\local_battle.py --games 3
+```
+
+Outputs are written to `local_runs/`:
+
+- `local_vis_001.json`
+- `local_vis_002.json`
+- `summary.json`
+
+Open a `local_vis_*.json` file with `visualizer.html`.
+
+The script uses the local CABT engine at:
+
+```text
+C:\Users\K\Documents\New project 8\kaggle-env-src\kaggle_environments\envs\cabt
+```

@@ -4,3 +4,4 @@ __pycache__/
 vis.json
 submission.tar.gz
 result.html
+local_runs/
