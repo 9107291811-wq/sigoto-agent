@@ -13,6 +13,7 @@ SETUP_ACTIVE_MEMORY: dict[int, str] = {}
 def choose_indices(obs_dict: dict) -> list[int]:
     select = obs_dict.get("select")
     if select is None:
+        SETUP_ACTIVE_MEMORY.clear()
         return read_deck_csv()
 
     options = select.get("option") or []
@@ -40,14 +41,21 @@ def choose_indices(obs_dict: dict) -> list[int]:
     force_optional_pick = effect is not None
 
     selected: list[int] = []
-    selected_names: set[str] = {
-        card_name(card_id(card))
-        for card in in_play_cards(obs_dict)
-        if card_name(card_id(card)) in UNIQUE_SETUP_NAMES
-    }
+    allow_duplicate_for_survival = len(in_play_cards(obs_dict)) <= 2
+    selected_names: set[str] = set()
+    if not allow_duplicate_for_survival:
+        selected_names = {
+            card_name(card_id(card))
+            for card in in_play_cards(obs_dict)
+            if card_name(card_id(card)) in UNIQUE_SETUP_NAMES
+        }
     player_index = your_index(obs_dict)
     remembered_active = SETUP_ACTIVE_MEMORY.get(player_index)
-    if rough_turn(obs_dict) == 0 and remembered_active in UNIQUE_SETUP_NAMES:
+    if (
+        rough_turn(obs_dict) == 0
+        and remembered_active in UNIQUE_SETUP_NAMES
+        and not allow_duplicate_for_survival
+    ):
         selected_names.add(remembered_active)
     for i, score in ranked_pairs:
         if min_count == 0 and score < 0 and not force_optional_pick:

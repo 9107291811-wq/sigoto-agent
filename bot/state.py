@@ -20,8 +20,21 @@ def your_player(obs_dict: dict) -> dict:
     return {}
 
 
+def opponent_player(obs_dict: dict) -> dict:
+    players = current_state(obs_dict).get("players") or []
+    index = 1 - your_index(obs_dict)
+    if index < len(players):
+        return players[index] or {}
+    return {}
+
+
 def zone_cards(obs_dict: dict, zone: str) -> list[dict]:
     cards = your_player(obs_dict).get(zone) or []
+    return [card for card in cards if card]
+
+
+def opponent_zone_cards(obs_dict: dict, zone: str) -> list[dict]:
+    cards = opponent_player(obs_dict).get(zone) or []
     return [card for card in cards if card]
 
 
