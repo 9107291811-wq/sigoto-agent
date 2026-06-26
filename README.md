@@ -42,3 +42,15 @@ The script uses the local CABT engine at:
 ```text
 C:\Users\K\Documents\New project 8\kaggle-env-src\kaggle_environments\envs\cabt
 ```
+
+## Submit To Kaggle
+
+1. Make sure the latest changes are pushed to GitHub.
+2. In Kaggle Notebook, run the cells in `notebook_cells.md` to pull the newest agent and make sure one practice battle works.
+3. Upload `dist/sigoto-agent-submission.zip` to the competition submission page.
+
+The ZIP should contain these files at the top level:
+
+- `main.py`
+- `deck.csv`
+- `bot/`

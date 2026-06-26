@@ -5,3 +5,4 @@ vis.json
 submission.tar.gz
 result.html
 local_runs/
+dist/
