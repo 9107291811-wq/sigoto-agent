@@ -56,6 +56,8 @@ CARD_BASE = {
     "night_stretcher": 700,
     "brocks_scouting": 760,
     "urbain": 720,
+    "hilda": 760,
+    "mortys_conviction": 720,
     "lillies_determination": 700,
     "tarragon": 640,
     "boss_orders": 560,
@@ -74,6 +76,15 @@ def has_energy_in_hand(obs_dict: dict) -> bool:
 
 def has_basic_fighting_in_hand(obs_dict: dict) -> bool:
     return any(card_id(card) in FIGHTING_ENERGY_IDS for card in hand_cards(obs_dict))
+
+
+def has_support_in_hand(obs_dict: dict, name: str) -> bool:
+    return any(card_name(card_id(card)) == name for card in hand_cards(obs_dict))
+
+
+def has_energy_search_in_hand(obs_dict: dict) -> bool:
+    names = {card_name(card_id(card)) for card in hand_cards(obs_dict)}
+    return bool(names & {"fighting_gong", "night_stretcher", "hilda", "tarragon"})
 
 
 def active_cards(obs_dict: dict) -> list[dict]:
@@ -212,6 +223,33 @@ def boss_target_score(option: dict, obs_dict: dict) -> int:
     return 4000 if boss_priority_target(target, obs_dict) else -2500
 
 
+def morty_discard_score(card: dict | None, obs_dict: dict) -> int:
+    name = card_name(card_id(card))
+    if name in ("solrock", "lunatone", "binacle", "barbaracle"):
+        if count_species_in_play(obs_dict, name) >= 1:
+            return 3600
+    if name == "battle_cage":
+        return 3300
+    if name == "air_balloon":
+        return 3000
+    if name == "basic_fighting_energy":
+        if any(is_attack_ready(card_in_play, obs_dict) for card_in_play in in_play_cards(obs_dict)):
+            return 2700
+        return 600
+    if name in ("poke_pad", "dusk_ball"):
+        attackers = {"okidogi", "clefairy"}
+        if not any(card_name(card_id(card_in_play)) in attackers for card_in_play in in_play_cards(obs_dict)):
+            return 500
+        return 2400
+    if name in ("boss_orders", "lillies_determination", "brocks_scouting", "tarragon"):
+        return 2000
+    if name == "hilda" and not hilda_is_high_value(obs_dict):
+        return 1900
+    if name == "mortys_conviction":
+        return 1700
+    return 1000
+
+
 def promotion_score(card: dict | None, obs_dict: dict) -> int:
     name = card_name(card_id(card))
     if has_air_balloon(card):
@@ -263,6 +301,41 @@ def one_energy_from_attack_ready(obs_dict: dict) -> bool:
         if name == "solrock" and count == 0:
             return True
     return False
+
+
+def attacker_needs_high_value_energy(obs_dict: dict) -> bool:
+    for card in in_play_cards(obs_dict):
+        name = card_name(card_id(card))
+        if name not in ("okidogi", "clefairy"):
+            continue
+        attached = attached_energy_ids(card)
+        count = energy_count(card)
+        has_special = any(attached_id in SPECIAL_ENERGY_IDS for attached_id in attached)
+        if count < 2 and not has_special:
+            return True
+        if count == 1 and has_special:
+            return True
+    return one_energy_from_attack_ready(obs_dict)
+
+
+def hilda_can_complete_with_barbaracle(obs_dict: dict) -> bool:
+    if not has_species_in_play(obs_dict, "binacle"):
+        return False
+    if has_species(obs_dict, "barbaracle"):
+        return False
+    for card in in_play_cards(obs_dict):
+        name = card_name(card_id(card))
+        attached = attached_energy_ids(card)
+        has_special = any(attached_id in SPECIAL_ENERGY_IDS for attached_id in attached)
+        if name in ("okidogi", "clefairy") and energy_count(card) == 1 and has_special:
+            return True
+        if name == "solrock" and has_species_in_play(obs_dict, "lunatone") and energy_count(card) == 0:
+            return True
+    return False
+
+
+def hilda_is_high_value(obs_dict: dict) -> bool:
+    return hilda_can_complete_with_barbaracle(obs_dict) or attacker_needs_high_value_energy(obs_dict)
 
 
 def energy_completes_attacker(energy_id: int, target_card: dict | None, obs_dict: dict) -> bool:
@@ -395,6 +468,24 @@ def play_score(name: str, obs_dict: dict) -> int:
     score = 500 + base_card_score(name)
     if name == "boss_orders":
         return 3600 if boss_has_priority_target(obs_dict) else -2200
+    if name == "hilda":
+        if hilda_can_complete_with_barbaracle(obs_dict):
+            return 5200
+        if hilda_is_high_value(obs_dict):
+            return 3600
+        score += 320
+    if name == "mortys_conviction":
+        opponent_bench = len(opponent_bench_cards(obs_dict))
+        if opponent_bench <= 2:
+            return -900
+        hand_count = rough_hand_count(obs_dict)
+        score += opponent_bench * 180
+        if hand_count is not None and hand_count <= 3:
+            score += 1200
+        if not has_energy_in_hand(obs_dict) and not has_energy_search_in_hand(obs_dict):
+            score += 1100
+        if has_support_in_hand(obs_dict, "lillies_determination"):
+            score += 600
     if name in ("dusk_ball", "poke_pad"):
         score += 600
     if name == "fighting_gong":
@@ -543,6 +634,16 @@ def score_option(option: Any, obs_dict: dict) -> int:
     if name:
         if context == 4 and int(option.get("area") or -1) == 5:
             return promotion_score(card, obs_dict)
+        if current_effect_name(obs_dict) == "hilda":
+            if name == "barbaracle":
+                return 4200
+            if name in ("prism_energy", "legacy_energy"):
+                return 3800
+            if name == "basic_fighting_energy":
+                return 3400 if best_barbaracle_basic_attach_score(obs_dict) > 0 else 1800
+            return -1000
+        if current_effect_name(obs_dict) == "mortys_conviction":
+            return morty_discard_score(card, obs_dict)
         if current_effect_name(obs_dict) == "lunatone":
             return 3000 if name == "basic_fighting_energy" else -1200
         if current_effect_name(obs_dict) == "barbaracle":
