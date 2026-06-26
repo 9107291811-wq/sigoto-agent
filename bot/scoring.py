@@ -47,8 +47,8 @@ CARD_BASE = {
     "binacle": 820,
     "barbaracle": 760,
     "clefairy": 740,
-    "prism_energy": 560,
-    "legacy_energy": 560,
+    "prism_energy": 540,
+    "legacy_energy": 620,
     "basic_fighting_energy": 420,
     "dusk_ball": 900,
     "poke_pad": 880,
@@ -203,6 +203,10 @@ def boss_priority_target(card: dict | None, obs_dict: dict) -> bool:
         return False
     if card_id(card) == CLEFAIRY_EX_ID and total_hp_left(card) <= best_ready_attacker_damage(obs_dict):
         return True
+    opponent_cards = opponent_active_cards(obs_dict) + opponent_bench_cards(obs_dict)
+    max_energy = max((energy_count(opponent_card) for opponent_card in opponent_cards), default=0)
+    if max_energy > 0 and energy_count(card) == max_energy and total_hp_left(card) <= best_ready_attacker_damage(obs_dict):
+        return True
     # Retreat cost is not exposed in the local observation, so keep Boss conservative
     # unless a clear prize-taking target exists.
     return False
@@ -220,7 +224,9 @@ def boss_target_score(option: dict, obs_dict: dict) -> int:
     if index is None or int(index) >= len(bench):
         return -2500
     target = bench[int(index)]
-    return 4000 if boss_priority_target(target, obs_dict) else -2500
+    if not boss_priority_target(target, obs_dict):
+        return -2500
+    return 4000 + energy_count(target) * 350
 
 
 def morty_discard_score(card: dict | None, obs_dict: dict) -> int:
@@ -250,8 +256,41 @@ def morty_discard_score(card: dict | None, obs_dict: dict) -> int:
     return 1000
 
 
+def lillie_return_score(card: dict | None, obs_dict: dict) -> int:
+    name = card_name(card_id(card))
+    if name == "barbaracle" and can_evolve_barbaracle_now(obs_dict):
+        return -5000
+    if name == "binacle" and not has_species_in_play(obs_dict, "binacle"):
+        return -2600
+    if name in ("okidogi", "clefairy"):
+        if count_species_in_play(obs_dict, name) == 0:
+            return -3000
+        return -800
+    if name in ("legacy_energy", "prism_energy"):
+        if attacker_needs_high_value_energy(obs_dict):
+            return -3200
+        return 300
+    if name == "basic_fighting_energy":
+        if needs_lunatone_draw_now(obs_dict) or one_energy_from_attack_ready(obs_dict):
+            return -1600
+        return 800
+    if name in ("solrock", "lunatone"):
+        if not has_species_in_play(obs_dict, name):
+            return -1800
+        return 1800
+    if name in ("battle_cage", "air_balloon"):
+        return 2400
+    if name in ("boss_orders", "mortys_conviction", "brocks_scouting", "tarragon"):
+        return 1400
+    if name in ("poke_pad", "dusk_ball", "fighting_gong", "night_stretcher", "hilda"):
+        return 300
+    return 1000
+
+
 def promotion_score(card: dict | None, obs_dict: dict) -> int:
     name = card_name(card_id(card))
+    if name == "lunatone":
+        return 500
     if has_air_balloon(card):
         return 5000
     if is_attack_ready(card, obs_dict):
@@ -267,13 +306,19 @@ def promotion_score(card: dict | None, obs_dict: dict) -> int:
         if name == "clefairy":
             return 2400
         if name == "solrock":
-            return 2200
-    if name not in ("okidogi", "clefairy"):
-        return 1100 + base_card_score(name)
+            return 2800
+    if name == "barbaracle":
+        return 1850
+    if name == "binacle":
+        return 1750
+    if name == "solrock":
+        return 1600
     if name == "okidogi":
         return 900
     if name == "clefairy":
         return 700
+    if name:
+        return 650
     return 0
 
 
@@ -332,6 +377,10 @@ def hilda_can_complete_with_barbaracle(obs_dict: dict) -> bool:
         if name == "solrock" and has_species_in_play(obs_dict, "lunatone") and energy_count(card) == 0:
             return True
     return False
+
+
+def can_evolve_barbaracle_now(obs_dict: dict) -> bool:
+    return has_species_in_play(obs_dict, "binacle") and has_species(obs_dict, "barbaracle")
 
 
 def hilda_is_high_value(obs_dict: dict) -> bool:
@@ -451,7 +500,9 @@ def search_card_score(name: str, obs_dict: dict) -> int:
             score += 760 if has_species(obs_dict, "binacle") and in_play == 0 else -600
     elif name == "clefairy":
         score += 620 if in_play == 0 else -220
-    elif name in ("prism_energy", "legacy_energy"):
+    elif name == "legacy_energy":
+        score += 520
+    elif name == "prism_energy":
         score += 420
     elif name == "basic_fighting_energy":
         score += 220
@@ -534,14 +585,17 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
 
     if energy_id in SPECIAL_ENERGY_IDS:
         score += 900
+        if energy_id == 12:
+            score += 260
         if target == "okidogi":
             score += 1800 if not has_special else -900
         elif target == "clefairy":
             score += 1600 if not has_special else -900
         elif target == "solrock":
-            score += -650 if existing_count == 0 else -1200
+            score += -900 if existing_count == 0 else -1400
+            score -= 700
         elif target in ("binacle", "barbaracle"):
-            score += 60 if existing_count == 0 and count_species_in_play(obs_dict, "okidogi") == 0 else -760
+            score += -760 if existing_count == 0 and count_species_in_play(obs_dict, "okidogi") == 0 else -1000
         else:
             score -= 360
 
@@ -552,7 +606,7 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
         elif target == "clefairy":
             score += 1080 if has_special and not has_fighting else (620 if existing_count == 0 else -900)
         elif target == "solrock" and has_species_in_play(obs_dict, "lunatone"):
-            score += 520 if existing_count == 0 else -900
+            score += 900 if existing_count == 0 else -900
             if (
                 existing_count == 0
                 and is_active_card(obs_dict, target_card)
@@ -563,7 +617,7 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
         elif target == "lunatone":
             score -= 600
         elif target in ("binacle", "barbaracle"):
-            score += 120 if existing_count == 0 and count_species_in_play(obs_dict, "okidogi") == 0 else -760
+            score += 420 if existing_count == 0 and count_species_in_play(obs_dict, "okidogi") == 0 else -760
         else:
             score -= 260
 
@@ -624,7 +678,7 @@ def score_option(option: Any, obs_dict: dict) -> int:
         if name == "lunatone" and needs_lunatone_draw_now(obs_dict):
             return 5200
         if name == "barbaracle":
-            return 1250 if has_basic_fighting_in_hand(obs_dict) and best_barbaracle_basic_attach_score(obs_dict) > 0 else -900
+            return 7600 if can_evolve_barbaracle_now(obs_dict) else -900
         return base_card_score(name) + setup_bench_score(name, obs_dict)
 
     if current_effect_name(obs_dict) == "boss_orders":
@@ -637,13 +691,17 @@ def score_option(option: Any, obs_dict: dict) -> int:
         if current_effect_name(obs_dict) == "hilda":
             if name == "barbaracle":
                 return 4200
-            if name in ("prism_energy", "legacy_energy"):
+            if name == "legacy_energy":
+                return 4100
+            if name == "prism_energy":
                 return 3800
             if name == "basic_fighting_energy":
                 return 3400 if best_barbaracle_basic_attach_score(obs_dict) > 0 else 1800
             return -1000
         if current_effect_name(obs_dict) == "mortys_conviction":
             return morty_discard_score(card, obs_dict)
+        if current_effect_name(obs_dict) == "lillies_determination":
+            return lillie_return_score(card, obs_dict)
         if current_effect_name(obs_dict) == "lunatone":
             return 3000 if name == "basic_fighting_energy" else -1200
         if current_effect_name(obs_dict) == "barbaracle":
