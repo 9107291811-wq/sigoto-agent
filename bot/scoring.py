@@ -6,6 +6,7 @@ from .state import (
     card_id,
     count_species,
     count_species_in_play,
+    current_state,
     energy_count,
     has_species,
     has_species_in_play,
@@ -30,6 +31,7 @@ TYPE_ATTACK = 13
 TYPE_END = 14
 AIR_BALLOON_ID = 1174
 CLEFAIRY_EX_ID = 272
+PUBLIC_EX_SEEN_BY_PLAYER: dict[int, bool] = {}
 EX_CARD_IDS = {
     24, 29, 30, 37, 40, 44, 46, 52, 63, 75, 79, 80, 83, 84, 96, 99, 107, 108, 117,
     121, 125, 130, 138, 139, 140, 141, 150, 153, 154, 161, 176, 179, 184, 189, 190,
@@ -106,6 +108,10 @@ def has_support_in_hand(obs_dict: dict, name: str) -> bool:
     return any(card_name(card_id(card)) == name for card in hand_cards(obs_dict))
 
 
+def has_card_in_hand(obs_dict: dict, name: str) -> bool:
+    return any(card_name(card_id(card)) == name for card in hand_cards(obs_dict))
+
+
 def has_energy_search_in_hand(obs_dict: dict) -> bool:
     names = {card_name(card_id(card)) for card in hand_cards(obs_dict)}
     return bool(names & {"fighting_gong", "night_stretcher", "hilda", "tarragon", "colress_tenacity"})
@@ -150,6 +156,10 @@ def opponent_has_psychic_lock(obs_dict: dict) -> bool:
     return bool(opponent_seen_names(obs_dict) & PSYCHIC_LOCK_NAMES)
 
 
+def reset_public_memory() -> None:
+    PUBLIC_EX_SEEN_BY_PLAYER.clear()
+
+
 def is_ex_visible_card(card: dict | None) -> bool:
     if not isinstance(card, dict):
         return False
@@ -159,19 +169,34 @@ def is_ex_visible_card(card: dict | None) -> bool:
     return card_name(card_id_value).endswith("_ex")
 
 
-def opponent_has_visible_ex(obs_dict: dict) -> bool:
-    visible_cards = opponent_active_cards(obs_dict) + opponent_bench_cards(obs_dict) + opponent_zone_cards(obs_dict, "discard")
-    if any(is_ex_visible_card(card) for card in visible_cards):
-        return True
+def remember_public_ex(obs_dict: dict) -> None:
+    players = current_state(obs_dict).get("players") or []
+    for player_index, player in enumerate(players):
+        if not isinstance(player, dict):
+            continue
+        visible_cards = []
+        for zone in ("active", "bench", "discard"):
+            visible_cards.extend(card for card in player.get(zone) or [] if card)
+        if any(is_ex_visible_card(card) for card in visible_cards):
+            PUBLIC_EX_SEEN_BY_PLAYER[player_index] = True
 
-    opponent_index = 1 - your_index(obs_dict)
     for log in obs_dict.get("logs") or []:
-        if not isinstance(log, dict) or int(log.get("playerIndex", -1)) != opponent_index:
+        if not isinstance(log, dict):
+            continue
+        player_index = log.get("playerIndex")
+        if player_index is None:
             continue
         for key in ("cardId", "cardIdTarget", "cardIdActive", "cardIdBench"):
             value = log.get(key)
             if value is not None and int(value) in EX_CARD_IDS:
-                return True
+                PUBLIC_EX_SEEN_BY_PLAYER[int(player_index)] = True
+
+
+def opponent_has_visible_ex(obs_dict: dict) -> bool:
+    remember_public_ex(obs_dict)
+    opponent_index = 1 - your_index(obs_dict)
+    if PUBLIC_EX_SEEN_BY_PLAYER.get(opponent_index, False):
+        return True
     return any(name.endswith("_ex") or name in CLEFAIRY_TARGET_NAMES for name in opponent_seen_names(obs_dict))
 
 
@@ -701,6 +726,17 @@ def unfinished_attacker_needs_energy(obs_dict: dict) -> bool:
     return False
 
 
+def okidogi_can_use_basic_energy_now(obs_dict: dict) -> bool:
+    for card in in_play_cards(obs_dict):
+        if card_name(card_id(card)) != "okidogi":
+            continue
+        if energy_count(card) == 0:
+            return True
+        if energy_count(card) == 1 and has_special_energy(card) and not has_fighting_energy(card):
+            return True
+    return False
+
+
 def current_effect_name(obs_dict: dict) -> str:
     effect = (obs_dict.get("select") or {}).get("effect") or {}
     return card_name(card_id(effect))
@@ -713,9 +749,17 @@ def best_basic_attach_score(obs_dict: dict) -> int:
 
 def barbaracle_basic_attach_score(card: dict, obs_dict: dict) -> int:
     name = card_name(card_id(card))
-    if name in ("okidogi", "clefairy"):
+    if name == "okidogi":
+        if energy_count(card) == 0:
+            return 3600
+        if energy_count(card) == 1 and has_special_energy(card) and not has_fighting_energy(card):
+            return 5600
+        return -5000
+    if name == "clefairy":
         return attach_score(6, card, obs_dict)
     if is_active_card(obs_dict, card) and energy_count(card) == 0 and has_ready_bench_attacker(obs_dict):
+        if okidogi_can_use_basic_energy_now(obs_dict):
+            return 1500
         return 2600
     if name == "solrock" and energy_count(card) == 0:
         return attach_score(6, card, obs_dict)
@@ -848,6 +892,8 @@ def play_score(name: str, obs_dict: dict) -> int:
     if name == "colress_tenacity":
         missing_energy = not has_energy_in_hand(obs_dict) or one_energy_from_attack_ready(obs_dict)
         visible_ex = opponent_has_visible_ex(obs_dict)
+        if visible_ex and has_card_in_hand(obs_dict, "neutralization_zone"):
+            return 3600
         if missing_energy and visible_ex:
             return 6400
         if visible_ex:
@@ -876,7 +922,7 @@ def play_score(name: str, obs_dict: dict) -> int:
     if name == "battle_cage":
         score += 420
     if name == "neutralization_zone":
-        return 5200 if opponent_has_visible_ex(obs_dict) else -2600
+        return 9200 if opponent_has_visible_ex(obs_dict) else -2600
     if name == "air_balloon":
         score += 700
     hand_count = rough_hand_count(obs_dict)

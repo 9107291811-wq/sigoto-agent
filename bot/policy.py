@@ -1,7 +1,7 @@
 import os
 
 from .deck import read_deck_csv
-from .scoring import score_option
+from .scoring import reset_public_memory, score_option
 from .state import card_id, in_play_cards, option_name, rough_turn, your_index
 from .cards import card_name
 
@@ -14,6 +14,7 @@ def choose_indices(obs_dict: dict) -> list[int]:
     select = obs_dict.get("select")
     if select is None:
         SETUP_ACTIVE_MEMORY.clear()
+        reset_public_memory()
         return read_deck_csv()
 
     options = select.get("option") or []
