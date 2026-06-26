@@ -189,6 +189,75 @@ def active_is_ready_attacker(obs_dict: dict) -> bool:
     return any(is_attack_ready(card, obs_dict) for card in active_cards(obs_dict))
 
 
+def attack_damage(card: dict | None, obs_dict: dict) -> int:
+    name = card_name(card_id(card))
+    if not is_attack_ready(card, obs_dict):
+        return 0
+    if name == "okidogi":
+        return 170
+    if name == "clefairy":
+        return (len(bench_cards(obs_dict)) + len(opponent_bench_cards(obs_dict))) * 20
+    if name == "solrock":
+        return 70
+    return 0
+
+
+def active_damage(obs_dict: dict) -> int:
+    cards = active_cards(obs_dict)
+    return attack_damage(cards[0], obs_dict) if cards else 0
+
+
+def opponent_active_hp(obs_dict: dict) -> int:
+    cards = opponent_active_cards(obs_dict)
+    return total_hp_left(cards[0]) if cards else 999
+
+
+def ready_bench_attackers(obs_dict: dict) -> list[dict]:
+    return [card for card in bench_cards(obs_dict) if is_attack_ready(card, obs_dict)]
+
+
+def ready_bench_okidogi_can_ko(obs_dict: dict) -> bool:
+    hp = opponent_active_hp(obs_dict)
+    return any(card_name(card_id(card)) == "okidogi" and attack_damage(card, obs_dict) >= hp for card in ready_bench_attackers(obs_dict))
+
+
+def ready_bench_attacker_can_ko(obs_dict: dict) -> bool:
+    hp = opponent_active_hp(obs_dict)
+    return any(attack_damage(card, obs_dict) >= hp for card in ready_bench_attackers(obs_dict))
+
+
+def should_retreat_for_bench_ko(obs_dict: dict) -> bool:
+    active = active_cards(obs_dict)
+    if not active:
+        return False
+    active_card = active[0]
+    active_name = card_name(card_id(active_card))
+    hp = opponent_active_hp(obs_dict)
+    if active_name == "solrock" and is_attack_ready(active_card, obs_dict):
+        return active_damage(obs_dict) < hp and ready_bench_attacker_can_ko(obs_dict)
+    if active_name == "clefairy":
+        return ready_bench_okidogi_can_ko(obs_dict)
+    if active_name == "okidogi":
+        active_hp = total_hp_left(active_card)
+        return any(
+            card_name(card_id(card)) == "okidogi"
+            and total_hp_left(card) > active_hp
+            for card in ready_bench_attackers(obs_dict)
+        )
+    return False
+
+
+def should_attach_balloon_to_active(obs_dict: dict, target_card: dict | None) -> bool:
+    if not is_active_card(obs_dict, target_card) or has_air_balloon(target_card):
+        return False
+    active_name = card_name(card_id(target_card))
+    if active_name in ("solrock", "clefairy"):
+        return should_retreat_for_bench_ko(obs_dict)
+    if active_name == "okidogi":
+        return should_retreat_for_bench_ko(obs_dict)
+    return False
+
+
 def needs_lunatone_draw_now(obs_dict: dict) -> bool:
     if not has_species_in_play(obs_dict, "solrock") or not has_species_in_play(obs_dict, "lunatone"):
         return False
@@ -624,6 +693,18 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
     return score
 
 
+def tool_attach_score(name: str, target_card: dict | None, obs_dict: dict) -> int:
+    if name == "air_balloon" and should_attach_balloon_to_active(obs_dict, target_card):
+        active_name = card_name(card_id(target_card))
+        if active_name == "okidogi":
+            return 4200
+        if active_name == "clefairy":
+            return 3900
+        if active_name == "solrock":
+            return 3600
+    return -500
+
+
 def attack_score(option: dict, obs_dict: dict) -> int:
     attack_id = option.get("attackId")
     if attack_id is None:
@@ -654,6 +735,12 @@ def score_option(option: Any, obs_dict: dict) -> int:
         return -250
 
     if opt_type == TYPE_RETREAT:
+        if should_retreat_for_bench_ko(obs_dict):
+            active = active_cards(obs_dict)
+            active_name = card_name(card_id(active[0])) if active else ""
+            if active_name == "okidogi" and not has_air_balloon(active[0]):
+                return -1700
+            return 4600
         if not has_ready_bench_attacker(obs_dict):
             return -1800
         if active_is_ready_attacker(obs_dict):
@@ -664,6 +751,8 @@ def score_option(option: Any, obs_dict: dict) -> int:
         return attack_score(option, obs_dict)
 
     if opt_type == TYPE_ATTACH:
+        if name == "air_balloon":
+            return tool_attach_score(name, option_target(obs_dict, option), obs_dict)
         return attach_score(cid, option_target(obs_dict, option), obs_dict)
 
     if opt_type == TYPE_PLAY:
