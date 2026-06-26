@@ -1,258 +1,223 @@
 from typing import Any
 
-from .scoring_text import as_text
+from .cards import ENERGY_IDS, FIGHTING_ENERGY_IDS, SPECIAL_ENERGY_IDS, card_name
 from .state import (
+    card_id,
+    count_species,
     has_species,
-    missing_setup_bonus,
-    option_text,
+    has_species_in_play,
+    in_play_cards,
+    option_card,
+    option_debug_text,
     rough_hand_count,
     rough_turn,
+    target_name,
+    zone_cards,
 )
 
 
-BASE_CARD_PRIORITY = [
-    ("okidogi", 1000),
-    ("solrock", 930),
-    ("lunatone", 910),
-    ("binacle", 860),
-    ("barbaracle", 850),
-    ("lillie's clefairy", 830),
-    ("clefairy", 820),
-    ("prism energy", 800),
-    ("legacy energy", 800),
-    ("fighting energy", 620),
-    ("basic {f} energy", 620),
-    ("dusk ball", 735),
-    ("poke pad", 730),
-    ("poké pad", 730),
-    ("fighting gong", 720),
-    ("night stretcher", 700),
-    ("brock's scouting", 690),
-    ("lillie's determination", 680),
-    ("urbain", 675),
-    ("tarragon", 665),
-    ("boss's orders", 650),
-    ("air balloon", 620),
-    ("battle cage", 610),
-]
+TYPE_PLAY = 7
+TYPE_ATTACH = 8
+TYPE_ABILITY = 9
+TYPE_RETREAT = 12
+TYPE_ATTACK = 13
+TYPE_END = 14
 
 
-BASE_ACTION_PRIORITY = [
-    ("ability", 820),
-    ("draw", 760),
-    ("demolish", 720),
-    ("full moon", 700),
-    ("cosmic beam", 660),
-    ("attack", 620),
-    ("evolve", 560),
-    ("attach", 180),
-    ("play", 500),
-    ("retreat", 220),
-    ("pass", -250),
-    ("end", -300),
-]
+CARD_BASE = {
+    "solrock": 930,
+    "lunatone": 910,
+    "okidogi": 880,
+    "binacle": 820,
+    "barbaracle": 760,
+    "clefairy": 740,
+    "prism_energy": 560,
+    "legacy_energy": 560,
+    "basic_fighting_energy": 420,
+    "dusk_ball": 900,
+    "poke_pad": 880,
+    "fighting_gong": 840,
+    "night_stretcher": 700,
+    "brocks_scouting": 760,
+    "urbain": 720,
+    "lillies_determination": 700,
+    "tarragon": 640,
+    "boss_orders": 560,
+    "air_balloon": 360,
+    "battle_cage": 620,
+}
 
 
-NON_SUPPORTER_KEYWORDS = (
-    "dusk ball",
-    "poke pad",
-    "poké pad",
-    "fighting gong",
-    "night stretcher",
-    "air balloon",
-    "battle cage",
-)
+def base_card_score(name: str) -> int:
+    return CARD_BASE.get(name, 0)
 
 
-SUPPORTER_KEYWORDS = (
-    "brock's scouting",
-    "lillie's determination",
-    "urbain",
-    "tarragon",
-    "boss's orders",
-)
+def setup_active_score(name: str) -> int:
+    if name == "okidogi":
+        return 1200
+    if name == "solrock":
+        return 700
+    if name == "binacle":
+        return 520
+    if name == "lunatone":
+        return 460
+    if name == "clefairy":
+        return 420
+    return 0
 
 
-SPECIAL_ENERGY_KEYWORDS = ("prism energy", "legacy energy")
-FIGHTING_ENERGY_KEYWORDS = ("fighting energy", "basic {f} energy")
-
-
-def has_keyword(text: str, keywords: tuple[str, ...]) -> bool:
-    return any(keyword in text for keyword in keywords)
-
-
-def base_keyword_score(text: str) -> int:
-    score = 0
-    for keyword, value in BASE_CARD_PRIORITY:
-        if keyword in text:
-            score += value
-    for keyword, value in BASE_ACTION_PRIORITY:
-        if keyword in text:
-            score += value
-    return score
-
-
-def setup_score(text: str, obs_dict: dict, context: str) -> int:
-    score = 0
+def setup_bench_score(name: str, obs_dict: dict) -> int:
     early = rough_turn(obs_dict) <= 2
-
-    if "setupactivepokemon" in context:
-        if "okidogi" in text:
-            score += 700
-        if "solrock" in text:
-            score += 420
-        if "binacle" in text:
-            score += 320
-        if "lunatone" in text:
-            score += 280
-        if "lillie's clefairy" in text:
-            score += 240
-
-    if "setupbenchpokemon" in context or "bench" in context or "pokemon" in context:
-        if early:
-            if "solrock" in text:
-                score += missing_setup_bonus(obs_dict, "solrock", 900, 120)
-            if "lunatone" in text:
-                score += missing_setup_bonus(obs_dict, "lunatone", 880, 100)
-
-        if "okidogi" in text:
-            score += 520 if has_species(obs_dict, "okidogi") else 720
-        if "binacle" in text:
-            score += 620 if not has_species(obs_dict, "binacle") else 220
-        if "barbaracle" in text:
-            score += 650 if has_species(obs_dict, "binacle") else -180
-        if "lillie's clefairy" in text:
-            score += 420 if has_species(obs_dict, "okidogi") else 300
-
-    return score
-
-
-def search_score(text: str, obs_dict: dict, context: str) -> int:
     score = 0
-    is_search = any(word in context for word in ("deck", "search", "select", "card"))
-    if not is_search:
-        return score
 
-    if "solrock" in text:
-        score += missing_setup_bonus(obs_dict, "solrock", 1800, 180)
-    if "lunatone" in text:
-        score += missing_setup_bonus(obs_dict, "lunatone", 1780, 160)
-    if has_species(obs_dict, "solrock") and not has_species(obs_dict, "lunatone") and "lunatone" in text:
-        score += 900
-    if has_species(obs_dict, "lunatone") and not has_species(obs_dict, "solrock") and "solrock" in text:
-        score += 900
-    if "okidogi" in text:
-        score += 520 if not has_species(obs_dict, "okidogi") else 180
-    if "binacle" in text:
-        score += 620 if not has_species(obs_dict, "binacle") else 180
-    if "barbaracle" in text:
-        score += 680 if has_species(obs_dict, "binacle") else -220
-    if "lillie's clefairy" in text:
-        score += 360
-
-    if has_keyword(text, SPECIAL_ENERGY_KEYWORDS):
-        score += 360
-    if has_keyword(text, FIGHTING_ENERGY_KEYWORDS):
-        score += 180
-
-    return score
-
-
-def target_name_bonus(text: str, okidogi: int, clefairy: int, solrock: int, other: int) -> int:
-    if "okidogi" in text:
-        return okidogi
-    if "lillie's clefairy" in text or "clefairy" in text:
-        return clefairy
-    if "solrock" in text:
-        return solrock
-    if any(name in text for name in ("lunatone", "binacle", "barbaracle")):
-        return other
-    return -260
-
-
-def energy_score(text: str, obs_dict: dict) -> int:
-    score = 0
-    is_attach = "attach" in text or ("energy" in text and "card" not in text)
-    if not is_attach:
-        return score
-
-    if has_keyword(text, SPECIAL_ENERGY_KEYWORDS):
+    if name == "solrock":
+        score += 1800 if not has_species(obs_dict, "solrock") else 180
+        if has_species(obs_dict, "lunatone") and not has_species(obs_dict, "solrock"):
+            score += 1000
+    elif name == "lunatone":
+        score += 1780 if not has_species(obs_dict, "lunatone") else 160
+        if has_species(obs_dict, "solrock") and not has_species(obs_dict, "lunatone"):
+            score += 1000
+    elif name == "okidogi":
+        score += 780 if count_species(obs_dict, "okidogi") == 0 else 360
+    elif name == "binacle":
+        score += 720 if not has_species(obs_dict, "binacle") else 160
+    elif name == "barbaracle":
+        score += 760 if has_species(obs_dict, "binacle") else -500
+    elif name == "clefairy":
         score += 520
-        score += target_name_bonus(text, okidogi=1250, clefairy=1120, solrock=180, other=-180)
 
-    if has_keyword(text, FIGHTING_ENERGY_KEYWORDS):
-        score += 240
-        score += target_name_bonus(text, okidogi=780, clefairy=720, solrock=360, other=-220)
-        if "solrock" in text and not has_species(obs_dict, "lunatone"):
-            score -= 260
-        if "lunatone" in text:
+    if early and name in ("solrock", "lunatone"):
+        score += 500
+    return score
+
+
+def search_card_score(name: str, obs_dict: dict) -> int:
+    score = 0
+    if name == "solrock":
+        score += 2200 if not has_species(obs_dict, "solrock") else 120
+        if has_species(obs_dict, "lunatone") and not has_species(obs_dict, "solrock"):
+            score += 1400
+    elif name == "lunatone":
+        score += 2180 if not has_species(obs_dict, "lunatone") else 100
+        if has_species(obs_dict, "solrock") and not has_species(obs_dict, "lunatone"):
+            score += 1400
+    elif name == "okidogi":
+        score += 720 if count_species(obs_dict, "okidogi") == 0 else 260
+    elif name == "binacle":
+        score += 680 if not has_species(obs_dict, "binacle") else 120
+    elif name == "barbaracle":
+        score += 760 if has_species(obs_dict, "binacle") else -600
+    elif name == "clefairy":
+        score += 520
+    elif name in ("prism_energy", "legacy_energy"):
+        score += 420
+    elif name == "basic_fighting_energy":
+        score += 220
+    return score
+
+
+def play_score(name: str, obs_dict: dict) -> int:
+    score = 500 + base_card_score(name)
+    if name in ("dusk_ball", "poke_pad"):
+        score += 600
+    if name == "fighting_gong":
+        score += 520
+    if name == "battle_cage":
+        score += 420
+    if name == "air_balloon":
+        score -= 120
+    hand_count = rough_hand_count(obs_dict)
+    if name == "urbain":
+        score += 650
+    if name == "lillies_determination":
+        score += 700 if hand_count is not None and hand_count <= 3 else 260
+    if name == "brocks_scouting":
+        score += 620
+    if name == "tarragon":
+        score += 360
+    return score
+
+
+def attach_score(energy_id: int | None, target: str, obs_dict: dict) -> int:
+    if energy_id not in ENERGY_IDS:
+        return -500
+
+    score = 0
+    if energy_id in SPECIAL_ENERGY_IDS:
+        score += 900
+        if target == "okidogi":
+            score += 1800
+        elif target == "clefairy":
+            score += 1600
+        elif target == "solrock":
+            score += 180
+        else:
             score -= 360
 
-    # Avoid wasting extra basic energy when the option text already exposes a
-    # loaded attacker. This is deliberately soft because exact energy state is
-    # not always represented in the option text.
-    if has_keyword(text, FIGHTING_ENERGY_KEYWORDS) and "energies" in text and "okidogi" in text:
-        score -= 420
+    if energy_id in FIGHTING_ENERGY_IDS:
+        score += 280
+        if target == "okidogi":
+            score += 980
+        elif target == "clefairy":
+            score += 900
+        elif target == "solrock" and has_species_in_play(obs_dict, "lunatone"):
+            score += 460
+        elif target == "lunatone":
+            score -= 600
+        elif target in ("binacle", "barbaracle"):
+            score -= 420
+        else:
+            score -= 260
 
     return score
 
 
-def trainer_score(text: str, obs_dict: dict) -> int:
-    score = 0
-    hand_count = rough_hand_count(obs_dict)
+def attack_score(option: dict, obs_dict: dict) -> int:
+    attack_id = option.get("attackId")
+    if attack_id is None:
+        return 0
 
-    if has_keyword(text, NON_SUPPORTER_KEYWORDS):
-        score += 240
+    # Known from visual logs: Solrock's Cosmic Beam is 980.
+    if int(attack_id) == 980:
+        return 900 if has_species_in_play(obs_dict, "lunatone") else 220
 
-    if "battle cage" in text:
-        score += 220
-
-    if "air balloon" in text:
-        score += 90
-
-    if "brock's scouting" in text:
-        score += 420
-
-    if "lillie's determination" in text:
-        score += 520 if hand_count is not None and hand_count <= 3 else 260
-
-    if "urbain" in text:
-        score += 540
-
-    if "tarragon" in text:
-        score += 360
-
-    if "boss's orders" in text:
-        score += 260
-        if "ex" in text or "retreat" in text:
-            score += 380
-
-    return score
-
-
-def attack_score(text: str, obs_dict: dict) -> int:
-    score = 0
-    if "demolish" in text or ("okidogi" in text and "attack" in text):
-        score += 1000
-    if "full moon" in text or ("lillie's clefairy" in text and "attack" in text):
-        score += 900
-    if "cosmic beam" in text:
-        score += 760 if has_species(obs_dict, "lunatone") else 180
-    if "attack" in text and not any(name in text for name in ("okidogi", "clefairy", "cosmic beam")):
-        score += 120
-    return score
+    return 620
 
 
 def score_option(option: Any, obs_dict: dict) -> int:
-    text = option_text(option)
-    select = obs_dict.get("select") or {}
-    context = as_text(select.get("context", "")) + " " + as_text(select.get("type", ""))
+    if not isinstance(option, dict):
+        return 0
 
-    return (
-        base_keyword_score(text)
-        + setup_score(text, obs_dict, context)
-        + search_score(text, obs_dict, context)
-        + energy_score(text, obs_dict)
-        + trainer_score(text, obs_dict)
-        + attack_score(text, obs_dict)
-    )
+    opt_type = int(option.get("type") or -1)
+    card = option_card(obs_dict, option)
+    cid = card_id(card)
+    name = card_name(cid)
+
+    if opt_type == TYPE_END:
+        return -10000
+
+    if opt_type == TYPE_RETREAT:
+        return 120
+
+    if opt_type == TYPE_ATTACK:
+        return attack_score(option, obs_dict)
+
+    if opt_type == TYPE_ATTACH:
+        return attach_score(cid, target_name(obs_dict, option), obs_dict)
+
+    if opt_type == TYPE_PLAY:
+        return play_score(name, obs_dict)
+
+    if opt_type == TYPE_ABILITY:
+        return 1250
+
+    # Card selection prompts such as setup, search, and to-hand use card options.
+    if name:
+        if rough_turn(obs_dict) == 0 and len(zone_cards(obs_dict, "active")) == 0:
+            return setup_active_score(name)
+        if rough_turn(obs_dict) == 0 and len(in_play_cards(obs_dict)) > 0:
+            return setup_bench_score(name, obs_dict)
+        return base_card_score(name) + search_card_score(name, obs_dict)
+
+    return 0
