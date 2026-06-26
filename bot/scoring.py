@@ -1,7 +1,13 @@
 from typing import Any
 
 from .scoring_text import as_text
-from .state import has_species, missing_setup_bonus, option_text, rough_hand_count, rough_turn
+from .state import (
+    has_species,
+    missing_setup_bonus,
+    option_text,
+    rough_hand_count,
+    rough_turn,
+)
 
 
 BASE_CARD_PRIORITY = [
@@ -14,8 +20,8 @@ BASE_CARD_PRIORITY = [
     ("clefairy", 820),
     ("prism energy", 800),
     ("legacy energy", 800),
-    ("fighting energy", 760),
-    ("basic {f} energy", 760),
+    ("fighting energy", 620),
+    ("basic {f} energy", 620),
     ("dusk ball", 735),
     ("poke pad", 730),
     ("poké pad", 730),
@@ -39,7 +45,7 @@ BASE_ACTION_PRIORITY = [
     ("cosmic beam", 660),
     ("attack", 620),
     ("evolve", 560),
-    ("attach", 540),
+    ("attach", 180),
     ("play", 500),
     ("retreat", 220),
     ("pass", -250),
@@ -128,11 +134,15 @@ def search_score(text: str, obs_dict: dict, context: str) -> int:
         return score
 
     if "solrock" in text:
-        score += missing_setup_bonus(obs_dict, "solrock", 850, 120)
+        score += missing_setup_bonus(obs_dict, "solrock", 1800, 180)
     if "lunatone" in text:
-        score += missing_setup_bonus(obs_dict, "lunatone", 830, 100)
+        score += missing_setup_bonus(obs_dict, "lunatone", 1780, 160)
+    if has_species(obs_dict, "solrock") and not has_species(obs_dict, "lunatone") and "lunatone" in text:
+        score += 900
+    if has_species(obs_dict, "lunatone") and not has_species(obs_dict, "solrock") and "solrock" in text:
+        score += 900
     if "okidogi" in text:
-        score += 680 if not has_species(obs_dict, "okidogi") else 360
+        score += 520 if not has_species(obs_dict, "okidogi") else 180
     if "binacle" in text:
         score += 620 if not has_species(obs_dict, "binacle") else 180
     if "barbaracle" in text:
@@ -141,44 +151,48 @@ def search_score(text: str, obs_dict: dict, context: str) -> int:
         score += 360
 
     if has_keyword(text, SPECIAL_ENERGY_KEYWORDS):
-        score += 520
+        score += 360
     if has_keyword(text, FIGHTING_ENERGY_KEYWORDS):
-        score += 340
+        score += 180
 
     return score
 
 
+def target_name_bonus(text: str, okidogi: int, clefairy: int, solrock: int, other: int) -> int:
+    if "okidogi" in text:
+        return okidogi
+    if "lillie's clefairy" in text or "clefairy" in text:
+        return clefairy
+    if "solrock" in text:
+        return solrock
+    if any(name in text for name in ("lunatone", "binacle", "barbaracle")):
+        return other
+    return -260
+
+
 def energy_score(text: str, obs_dict: dict) -> int:
     score = 0
-    is_attach = "attach" in text or "energy" in text
+    is_attach = "attach" in text or ("energy" in text and "card" not in text)
     if not is_attach:
         return score
 
     if has_keyword(text, SPECIAL_ENERGY_KEYWORDS):
-        if "okidogi" in text:
-            score += 900
-        elif "lillie's clefairy" in text or "clefairy" in text:
-            score += 860
-        else:
-            score += 560
+        score += 520
+        score += target_name_bonus(text, okidogi=1250, clefairy=1120, solrock=180, other=-180)
 
     if has_keyword(text, FIGHTING_ENERGY_KEYWORDS):
-        if "okidogi" in text:
-            score += 620
-        elif "lillie's clefairy" in text or "clefairy" in text:
-            score += 600
-        elif "solrock" in text and has_species(obs_dict, "lunatone"):
-            score += 450
-        elif "lunatone" in text:
-            score -= 80
-        else:
-            score += 120
+        score += 240
+        score += target_name_bonus(text, okidogi=780, clefairy=720, solrock=360, other=-220)
+        if "solrock" in text and not has_species(obs_dict, "lunatone"):
+            score -= 260
+        if "lunatone" in text:
+            score -= 360
 
     # Avoid wasting extra basic energy when the option text already exposes a
     # loaded attacker. This is deliberately soft because exact energy state is
     # not always represented in the option text.
     if has_keyword(text, FIGHTING_ENERGY_KEYWORDS) and "energies" in text and "okidogi" in text:
-        score -= 160
+        score -= 420
 
     return score
 

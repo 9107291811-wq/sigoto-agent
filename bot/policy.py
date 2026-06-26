@@ -1,3 +1,5 @@
+import os
+
 from .deck import read_deck_csv
 from .scoring import score_option
 
@@ -21,11 +23,21 @@ def choose_indices(obs_dict: dict) -> list[int]:
     if count <= 0:
         return []
 
-    ranked = sorted(
-        range(len(options)),
-        key=lambda i: (score_option(options[i], obs_dict), -i),
-        reverse=True,
-    )
+    scored = [(i, score_option(options[i], obs_dict)) for i in range(len(options))]
+    ranked = [
+        i
+        for i, _score in sorted(
+            scored,
+            key=lambda item: (item[1], -item[0]),
+            reverse=True,
+        )
+    ]
+
+    if os.getenv("SIGOTO_DEBUG") == "1":
+        print("select:", select.get("type"), select.get("context"), "count:", count)
+        for i, score in sorted(scored, key=lambda item: item[1], reverse=True)[:8]:
+            print(" ", score, i, options[i])
+
     return ranked[:count]
 
 
