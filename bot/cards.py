@@ -31,12 +31,14 @@ CARD_NAMES = {
     1174: "air_balloon",
     1182: "boss_orders",
     1187: "mortys_conviction",
+    1194: "colress_tenacity",
     1208: "iriss_fighting_spirit",
     1210: "brocks_scouting",
     1225: "hilda",
     1227: "lillies_determination",
     1236: "urbain",
     1238: "tarragon",
+    1247: "neutralization_zone",
     1264: "battle_cage",
 }
 

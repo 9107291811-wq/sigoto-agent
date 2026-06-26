@@ -75,12 +75,14 @@ CARD_BASE = {
     "brocks_scouting": 760,
     "urbain": 720,
     "hilda": 760,
+    "colress_tenacity": 780,
     "mortys_conviction": 720,
     "lillies_determination": 700,
     "tarragon": 640,
     "boss_orders": 560,
     "air_balloon": 360,
     "battle_cage": 620,
+    "neutralization_zone": 760,
 }
 
 
@@ -106,7 +108,7 @@ def has_support_in_hand(obs_dict: dict, name: str) -> bool:
 
 def has_energy_search_in_hand(obs_dict: dict) -> bool:
     names = {card_name(card_id(card)) for card in hand_cards(obs_dict)}
-    return bool(names & {"fighting_gong", "night_stretcher", "hilda", "tarragon"})
+    return bool(names & {"fighting_gong", "night_stretcher", "hilda", "tarragon", "colress_tenacity"})
 
 
 def active_cards(obs_dict: dict) -> list[dict]:
@@ -146,6 +148,10 @@ def opponent_has_fighting_threat(obs_dict: dict) -> bool:
 
 def opponent_has_psychic_lock(obs_dict: dict) -> bool:
     return bool(opponent_seen_names(obs_dict) & PSYCHIC_LOCK_NAMES)
+
+
+def opponent_has_visible_ex(obs_dict: dict) -> bool:
+    return any(name.endswith("_ex") or name in CLEFAIRY_TARGET_NAMES for name in opponent_seen_names(obs_dict))
 
 
 def total_hp_left(card: dict | None) -> int:
@@ -811,6 +817,16 @@ def play_score(name: str, obs_dict: dict) -> int:
         if hilda_is_high_value(obs_dict):
             return 3600
         score += 320
+    if name == "colress_tenacity":
+        missing_energy = not has_energy_in_hand(obs_dict) or one_energy_from_attack_ready(obs_dict)
+        visible_ex = opponent_has_visible_ex(obs_dict)
+        if missing_energy and visible_ex:
+            return 6400
+        if visible_ex:
+            return 4200
+        if missing_energy:
+            return 3800
+        score += 260
     if name == "mortys_conviction":
         opponent_bench = len(opponent_bench_cards(obs_dict))
         if opponent_bench <= 2:
@@ -831,6 +847,8 @@ def play_score(name: str, obs_dict: dict) -> int:
             score += 900
     if name == "battle_cage":
         score += 420
+    if name == "neutralization_zone":
+        return 5200 if opponent_has_visible_ex(obs_dict) else -2600
     if name == "air_balloon":
         score += 700
     hand_count = rough_hand_count(obs_dict)
@@ -1047,6 +1065,14 @@ def score_option(option: Any, obs_dict: dict) -> int:
                 return 3800
             if name == "basic_fighting_energy":
                 return 3400 if best_barbaracle_basic_attach_score(obs_dict) > 0 else 1800
+            return -1000
+        if current_effect_name(obs_dict) == "colress_tenacity":
+            if name == "neutralization_zone":
+                return 4500 if opponent_has_visible_ex(obs_dict) else 900
+            if name == "prism_energy":
+                return 4200
+            if name == "basic_fighting_energy":
+                return 3600 if one_energy_from_attack_ready(obs_dict) else 2200
             return -1000
         if current_effect_name(obs_dict) == "mortys_conviction":
             return morty_discard_score(card, obs_dict)

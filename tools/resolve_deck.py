@@ -2,6 +2,7 @@ import csv
 import argparse
 import json
 import re
+import sys
 import unicodedata
 from pathlib import Path
 
@@ -119,6 +120,8 @@ def parse_args():
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
     input_root = Path(args.input_root)
     csv_path = find_csv(input_root)

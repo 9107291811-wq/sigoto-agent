@@ -11,13 +11,13 @@
   {"count": 3, "name": "Night Stretcher", "expansion": "ASC", "collection_no": "196"},
   {"count": 4, "name": "Lillie's Determination", "expansion": "MEG", "collection_no": "119"},
   {"count": 4, "name": "Poké Pad", "expansion": "POR", "collection_no": "81"},
-  {"count": 2, "name": "Battle Cage", "expansion": "PFL", "collection_no": "85"},
+  {"count": 1, "name": "Neutralization Zone", "expansion": "SFA", "collection_no": "60"},
   {"count": 2, "name": "Boss's Orders", "expansion": "MEG", "collection_no": "114"},
   {"count": 4, "name": "Fighting Gong", "expansion": "MEG", "collection_no": "116"},
   {"count": 2, "name": "Hilda", "expansion": "MEG", "collection_no": "118"},
   {"count": 2, "name": "Morty's Conviction", "expansion": "TEF", "collection_no": "155"},
   {"count": 1, "name": "Tarragon", "expansion": "POR", "collection_no": "85"},
+  {"count": 2, "name": "Colress’s Tenacity", "expansion": "SFA", "collection_no": "57"},
   {"count": 8, "name": "Basic {F} Energy", "expansion": "MEE", "collection_no": "6"},
-  {"count": 1, "name": "Legacy Energy", "expansion": "TWM", "collection_no": "167"},
   {"count": 4, "name": "Prism Energy", "expansion": "ASC", "collection_no": "216"}
 ]
