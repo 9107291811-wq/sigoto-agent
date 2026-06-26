@@ -23,6 +23,18 @@ print("bot files:", os.listdir(agent_dir / "bot"))
 print("deck lines:", len((agent_dir / "deck.csv").read_text().splitlines()))
 ```
 
+## 1.5. Resolve Current Decklist Against Official Card CSV
+
+Run this after pulling from GitHub. It rewrites `deck.csv` using the official competition card list.
+
+```python
+%cd /kaggle/working/ptcg-agent
+!python tools/resolve_deck.py /kaggle/input
+
+print("deck lines:", len(open("/kaggle/working/ptcg-agent/deck.csv").read().splitlines()))
+print(open("/kaggle/working/ptcg-agent/deck.csv").read())
+```
+
 ## 2. Run One Practice Battle And Export vis.json
 
 ```python
