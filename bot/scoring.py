@@ -150,7 +150,28 @@ def opponent_has_psychic_lock(obs_dict: dict) -> bool:
     return bool(opponent_seen_names(obs_dict) & PSYCHIC_LOCK_NAMES)
 
 
+def is_ex_visible_card(card: dict | None) -> bool:
+    if not isinstance(card, dict):
+        return False
+    card_id_value = card_id(card)
+    if card_id_value in EX_CARD_IDS:
+        return True
+    return card_name(card_id_value).endswith("_ex")
+
+
 def opponent_has_visible_ex(obs_dict: dict) -> bool:
+    visible_cards = opponent_active_cards(obs_dict) + opponent_bench_cards(obs_dict) + opponent_zone_cards(obs_dict, "discard")
+    if any(is_ex_visible_card(card) for card in visible_cards):
+        return True
+
+    opponent_index = 1 - your_index(obs_dict)
+    for log in obs_dict.get("logs") or []:
+        if not isinstance(log, dict) or int(log.get("playerIndex", -1)) != opponent_index:
+            continue
+        for key in ("cardId", "cardIdTarget", "cardIdActive", "cardIdBench"):
+            value = log.get(key)
+            if value is not None and int(value) in EX_CARD_IDS:
+                return True
     return any(name.endswith("_ex") or name in CLEFAIRY_TARGET_NAMES for name in opponent_seen_names(obs_dict))
 
 
@@ -673,6 +694,13 @@ def energy_completes_attacker(energy_id: int, target_card: dict | None, obs_dict
     return False
 
 
+def unfinished_attacker_needs_energy(obs_dict: dict) -> bool:
+    for card in in_play_cards(obs_dict):
+        if card_name(card_id(card)) in ("okidogi", "clefairy") and energy_count(card) < 2:
+            return True
+    return False
+
+
 def current_effect_name(obs_dict: dict) -> str:
     effect = (obs_dict.get("select") or {}).get("effect") or {}
     return card_name(card_id(effect))
@@ -921,13 +949,15 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
     if energy_id in FIGHTING_ENERGY_IDS:
         score += 280
         if target == "okidogi":
-            score += 2600 if has_special and not has_fighting else (780 if existing_count == 0 else -1200)
+            score += 2600 if has_special and not has_fighting else (1800 if existing_count == 0 else -1200)
         elif target == "clefairy":
-            score += 2200 if has_special and not has_fighting else (1050 if existing_count == 0 else -900)
+            score += 2200 if has_special and not has_fighting else (1500 if existing_count == 0 else -900)
             if opponent_has_fighting_threat(obs_dict):
                 score += 2600
         elif target == "solrock" and has_species_in_play(obs_dict, "lunatone"):
             score += 220 if existing_count == 0 else -900
+            if existing_count == 0 and unfinished_attacker_needs_energy(obs_dict):
+                score -= 1200
             if (
                 existing_count == 0
                 and is_active_card(obs_dict, target_card)
