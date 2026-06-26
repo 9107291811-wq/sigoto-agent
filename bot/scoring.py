@@ -419,6 +419,28 @@ def active_needs_balloon_ko_switch(obs_dict: dict) -> bool:
     return active_damage(obs_dict) < opponent_active_hp(obs_dict) and ready_bench_attacker_can_ko(obs_dict)
 
 
+def ready_bench_okidogi_is_better_attack(obs_dict: dict) -> bool:
+    active = active_cards(obs_dict)
+    if not active:
+        return False
+    best_okidogi_damage = max(
+        (
+            attack_damage(card, obs_dict)
+            for card in ready_bench_attackers(obs_dict)
+            if card_name(card_id(card)) == "okidogi"
+        ),
+        default=0,
+    )
+    if best_okidogi_damage <= 0:
+        return False
+    active_name = card_name(card_id(active[0]))
+    if active_name == "clefairy" and opponent_active_cards(obs_dict):
+        opponent_name = card_name(card_id(opponent_active_cards(obs_dict)[0]))
+        if opponent_name in CLEFAIRY_TARGET_NAMES and active_damage(obs_dict) >= best_okidogi_damage:
+            return False
+    return best_okidogi_damage > active_damage(obs_dict)
+
+
 def should_retreat_for_bench_ko(obs_dict: dict) -> bool:
     active = active_cards(obs_dict)
     if not active:
@@ -429,6 +451,8 @@ def should_retreat_for_bench_ko(obs_dict: dict) -> bool:
     if active_clefairy_should_leave(obs_dict):
         return True
     if active_needs_balloon_ko_switch(obs_dict):
+        return True
+    if ready_bench_okidogi_is_better_attack(obs_dict):
         return True
     if has_bench_better_than_empty_active(obs_dict) and has_air_balloon(active_card):
         return True
