@@ -127,6 +127,27 @@ def current_effect_name(obs_dict: dict) -> str:
     return card_name(card_id(effect))
 
 
+def best_basic_attach_score(obs_dict: dict) -> int:
+    scores = [attach_score(6, card, obs_dict) for card in in_play_cards(obs_dict)]
+    return max(scores) if scores else -5000
+
+
+def barbaracle_basic_attach_score(card: dict, obs_dict: dict) -> int:
+    name = card_name(card_id(card))
+    if name == "okidogi":
+        return attach_score(6, card, obs_dict)
+    if name == "solrock" and energy_count(card) == 0:
+        return attach_score(6, card, obs_dict)
+    if name in ("binacle", "barbaracle") and count_species_in_play(obs_dict, "okidogi") == 0:
+        return attach_score(6, card, obs_dict)
+    return -5000
+
+
+def best_barbaracle_basic_attach_score(obs_dict: dict) -> int:
+    scores = [barbaracle_basic_attach_score(card, obs_dict) for card in in_play_cards(obs_dict)]
+    return max(scores) if scores else -5000
+
+
 def setup_active_score(name: str) -> int:
     if name == "okidogi":
         return 1200
@@ -265,7 +286,7 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
         elif target == "clefairy":
             score += 1600 if not has_special else -900
         elif target == "solrock":
-            score += 120 if existing_count == 0 else -900
+            score += -650 if existing_count == 0 else -1200
         elif target in ("binacle", "barbaracle"):
             score += 60 if existing_count == 0 and count_species_in_play(obs_dict, "okidogi") == 0 else -760
         else:
@@ -331,10 +352,17 @@ def score_option(option: Any, obs_dict: dict) -> int:
         return 1250
 
     if opt_type == TYPE_PUT_OR_EVOLVE:
+        if name == "barbaracle":
+            return 1250 if has_basic_fighting_in_hand(obs_dict) and best_barbaracle_basic_attach_score(obs_dict) > 0 else -900
         return base_card_score(name) + setup_bench_score(name, obs_dict)
 
     # Card selection prompts such as setup, search, and to-hand use card options.
     if name:
+        if current_effect_name(obs_dict) == "barbaracle":
+            if name == "basic_fighting_energy":
+                return 1200 if best_barbaracle_basic_attach_score(obs_dict) > 0 else -900
+            if name in POKEMON_NAMES:
+                return barbaracle_basic_attach_score(card, obs_dict)
         if rough_turn(obs_dict) == 0 and len(zone_cards(obs_dict, "active")) == 0:
             return setup_active_score(name)
         if rough_turn(obs_dict) == 0 and len(in_play_cards(obs_dict)) > 0:
