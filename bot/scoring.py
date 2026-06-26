@@ -970,9 +970,9 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
 
     score = 0
     if energy_completes_attacker(int(energy_id), target_card, obs_dict):
-        score += 700 if target == "solrock" else 2200
+        score += 700 if target == "solrock" else 3600
         if target_card in zone_cards(obs_dict, "active"):
-            score += 400
+            score += 1600
 
     if energy_id in SPECIAL_ENERGY_IDS:
         score += 900
