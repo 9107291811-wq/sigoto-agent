@@ -30,10 +30,21 @@ TYPE_ATTACK = 13
 TYPE_END = 14
 AIR_BALLOON_ID = 1174
 CLEFAIRY_EX_ID = 272
-EX_CARD_IDS = {CLEFAIRY_EX_ID}
-BOSS_CALL_NAMES = {"riolu", "snorunt", "alakazam"}
+EX_CARD_IDS = {
+    24, 29, 30, 37, 40, 44, 46, 52, 63, 75, 79, 80, 83, 84, 96, 99, 107, 108, 117,
+    121, 125, 130, 138, 139, 140, 141, 150, 153, 154, 161, 176, 179, 184, 189, 190,
+    193, 198, 205, 207, 210, 223, 229, 231, 232, 236, 239, 241, 243, 244, 246, 248,
+    249, 259, 269, 272, 283, 293, 299, 302, 306, 313, 316, 320, 326, 328, 329, 331,
+    336, 337, 340, 357, 369, 372, 381, 389, 404, 407, 424, 431, 447, 455, 458, 471,
+    481, 509, 515, 525, 527, 547, 561, 573, 583, 598, 618, 631, 641, 648, 652, 662,
+    678, 687, 695, 723, 737, 747, 754, 756, 766, 772, 781, 790, 795, 806, 813, 828,
+    835, 849, 861, 868, 874, 886, 896, 904, 911, 919, 928, 932, 939, 944, 951, 954,
+    957, 962, 968, 969, 975, 979, 984, 988, 990, 993, 997, 1002, 1006, 1022, 1026,
+    1031, 1040, 1056, 1062, 1064, 1071,
+}
 FIGHTING_THREAT_NAMES = {"mega_lucario_ex", "lucario_ex", "lucario", "hariyama", "makuhita"}
-MEGA_LUCARIO_NAMES = {"mega_lucario_ex"}
+CLEFAIRY_TARGET_NAMES = {"mega_lucario_ex", "dragapult_ex"}
+CLEFAIRY_SIGNAL_NAMES = FIGHTING_THREAT_NAMES | {"dreepy", "drakloak", "dragapult_ex"}
 PSYCHIC_LOCK_NAMES = {"alakazam", "abra", "kadabra"}
 LUCARIO_LINE_NAMES = {"riolu", "mega_lucario_ex", "lucario_ex", "lucario"}
 
@@ -130,7 +141,7 @@ def opponent_seen_names(obs_dict: dict) -> set[str]:
 
 
 def opponent_has_fighting_threat(obs_dict: dict) -> bool:
-    return bool(opponent_seen_names(obs_dict) & FIGHTING_THREAT_NAMES)
+    return bool(opponent_seen_names(obs_dict) & CLEFAIRY_SIGNAL_NAMES)
 
 
 def opponent_has_psychic_lock(obs_dict: dict) -> bool:
@@ -289,19 +300,31 @@ def clefairy_damage_to(card: dict | None, obs_dict: dict) -> int:
     if card_name(card_id(clefairy)) != "clefairy" or not is_attack_ready(clefairy, obs_dict):
         return 0
     damage = attack_damage(clefairy, obs_dict)
-    if card_name(card_id(card)) in FIGHTING_THREAT_NAMES:
+    if card_name(card_id(card)) in (FIGHTING_THREAT_NAMES | CLEFAIRY_TARGET_NAMES):
         damage *= 2
     return damage
 
 
 def active_clefairy_can_ko_mega_lucario(card: dict | None, obs_dict: dict) -> bool:
-    return card_name(card_id(card)) in MEGA_LUCARIO_NAMES and clefairy_damage_to(card, obs_dict) >= total_hp_left(card)
+    return card_name(card_id(card)) in CLEFAIRY_TARGET_NAMES and clefairy_damage_to(card, obs_dict) >= total_hp_left(card)
+
+
+def active_can_take_boss_priority_prize(card: dict | None, obs_dict: dict) -> bool:
+    if not isinstance(card, dict):
+        return False
+    if active_damage(obs_dict) <= 0:
+        return False
+    if opponent_active_hp(obs_dict) <= active_damage(obs_dict):
+        return False
+    if not is_ex_card(card) and energy_count(card) < 3:
+        return False
+    return active_damage(obs_dict) >= total_hp_left(card)
 
 
 def opponent_active_is_mega_lucario(obs_dict: dict) -> bool:
     if not opponent_active_cards(obs_dict):
         return False
-    return card_name(card_id(opponent_active_cards(obs_dict)[0])) in MEGA_LUCARIO_NAMES
+    return card_name(card_id(opponent_active_cards(obs_dict)[0])) in CLEFAIRY_TARGET_NAMES
 
 
 def active_clefairy_needs_basic_for_mega_lucario(obs_dict: dict) -> bool:
@@ -324,7 +347,7 @@ def active_clefairy_should_leave(obs_dict: dict) -> bool:
     if not opponent_has_fighting_threat(obs_dict):
         return False
     opponent_active_name = card_name(card_id(opponent_active_cards(obs_dict)[0])) if opponent_active_cards(obs_dict) else ""
-    return opponent_active_name not in MEGA_LUCARIO_NAMES
+    return opponent_active_name not in CLEFAIRY_TARGET_NAMES
 
 
 def has_bench_better_than_empty_active(obs_dict: dict) -> bool:
@@ -417,11 +440,9 @@ def boss_priority_target(card: dict | None, obs_dict: dict) -> bool:
         return False
     if opponent_has_fighting_threat(obs_dict):
         return active_clefairy_can_ko_mega_lucario(card, obs_dict)
-    if is_ex_card(card) and active_can_ko(card, obs_dict):
+    if active_can_take_boss_priority_prize(card, obs_dict):
         return True
-    target_name = card_name(card_id(card))
-    active_names = {card_name(card_id(active_card)) for active_card in opponent_active_cards(obs_dict)}
-    if target_name in BOSS_CALL_NAMES and target_name not in active_names:
+    if is_ex_card(card) and active_can_ko(card, obs_dict):
         return True
     if card_id(card) == CLEFAIRY_EX_ID and total_hp_left(card) <= best_ready_attacker_damage(obs_dict):
         return True
@@ -440,6 +461,10 @@ def boss_has_active_ex_ko_target(obs_dict: dict) -> bool:
     return any(is_ex_card(card) and active_can_ko(card, obs_dict) for card in opponent_bench_cards(obs_dict))
 
 
+def boss_has_active_prize_target(obs_dict: dict) -> bool:
+    return any(active_can_take_boss_priority_prize(card, obs_dict) for card in opponent_bench_cards(obs_dict))
+
+
 def boss_has_priority_target(obs_dict: dict) -> bool:
     if any(boss_priority_target(card, obs_dict) for card in opponent_active_cards(obs_dict)):
         return False
@@ -456,8 +481,8 @@ def boss_target_score(option: dict, obs_dict: dict) -> int:
         return -2500
     if active_clefairy_can_ko_mega_lucario(target, obs_dict):
         return 9800
-    if card_name(card_id(target)) in BOSS_CALL_NAMES:
-        return 5600 + energy_count(target) * 250
+    if active_can_take_boss_priority_prize(target, obs_dict):
+        return 8600 + energy_count(target) * 300 + max(0, total_hp_left(target))
     if is_ex_card(target) and active_can_ko(target, obs_dict):
         return 6200 + energy_count(target) * 350
     return 4000 + energy_count(target) * 350
@@ -529,7 +554,7 @@ def promotion_score(card: dict | None, obs_dict: dict) -> int:
         return -5000
     if name == "clefairy" and opponent_has_fighting_threat(obs_dict):
         opponent_active_name = card_name(card_id(opponent_active_cards(obs_dict)[0])) if opponent_active_cards(obs_dict) else ""
-        if opponent_active_name in MEGA_LUCARIO_NAMES and is_attack_ready(card, obs_dict):
+        if opponent_active_name in CLEFAIRY_TARGET_NAMES and is_attack_ready(card, obs_dict):
             return 6200
         return -4200
     if name == "clefairy" and energy_count(card) == 0:
@@ -775,6 +800,8 @@ def play_score(name: str, obs_dict: dict) -> int:
     if name == "boss_orders":
         if opponent_has_fighting_threat(obs_dict):
             return 9200 if boss_has_active_ex_ko_target(obs_dict) else -3200
+        if boss_has_active_prize_target(obs_dict):
+            return 8200
         if boss_has_active_ex_ko_target(obs_dict):
             return 8800
         return 3600 if boss_has_priority_target(obs_dict) else -2200
