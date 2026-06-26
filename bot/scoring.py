@@ -16,6 +16,7 @@ from .state import (
     option_target,
     rough_hand_count,
     rough_turn,
+    your_index,
     zone_cards,
 )
 
@@ -31,7 +32,10 @@ AIR_BALLOON_ID = 1174
 CLEFAIRY_EX_ID = 272
 EX_CARD_IDS = {CLEFAIRY_EX_ID}
 BOSS_CALL_NAMES = {"riolu", "snorunt", "alakazam"}
-LUCARIO_LINE_NAMES = {"riolu", "mega_lucario_ex", "lucario_ex"}
+FIGHTING_THREAT_NAMES = {"mega_lucario_ex", "lucario_ex", "lucario", "hariyama", "makuhita"}
+MEGA_LUCARIO_NAMES = {"mega_lucario_ex"}
+PSYCHIC_LOCK_NAMES = {"alakazam", "abra", "kadabra"}
+LUCARIO_LINE_NAMES = {"riolu", "mega_lucario_ex", "lucario_ex", "lucario"}
 
 POKEMON_NAMES = {
     "solrock",
@@ -108,6 +112,29 @@ def opponent_active_cards(obs_dict: dict) -> list[dict]:
 
 def opponent_bench_cards(obs_dict: dict) -> list[dict]:
     return opponent_zone_cards(obs_dict, "bench")
+
+
+def opponent_seen_names(obs_dict: dict) -> set[str]:
+    opponent_index = 1 - your_index(obs_dict)
+    names = {
+        card_name(card_id(card))
+        for card in opponent_active_cards(obs_dict) + opponent_bench_cards(obs_dict) + opponent_zone_cards(obs_dict, "discard")
+    }
+    for log in obs_dict.get("logs") or []:
+        if not isinstance(log, dict) or int(log.get("playerIndex", -1)) != opponent_index:
+            continue
+        for key in ("cardId", "cardIdTarget"):
+            if log.get(key) is not None:
+                names.add(card_name(int(log[key])))
+    return names
+
+
+def opponent_has_fighting_threat(obs_dict: dict) -> bool:
+    return bool(opponent_seen_names(obs_dict) & FIGHTING_THREAT_NAMES)
+
+
+def opponent_has_psychic_lock(obs_dict: dict) -> bool:
+    return bool(opponent_seen_names(obs_dict) & PSYCHIC_LOCK_NAMES)
 
 
 def total_hp_left(card: dict | None) -> int:
@@ -257,6 +284,30 @@ def ready_bench_attacker_can_ko(obs_dict: dict) -> bool:
     return any(attack_damage(card, obs_dict) >= hp for card in ready_bench_attackers(obs_dict))
 
 
+def clefairy_damage_to(card: dict | None, obs_dict: dict) -> int:
+    clefairy = active_cards(obs_dict)[0] if active_cards(obs_dict) else None
+    if card_name(card_id(clefairy)) != "clefairy" or not is_attack_ready(clefairy, obs_dict):
+        return 0
+    damage = attack_damage(clefairy, obs_dict)
+    if card_name(card_id(card)) in FIGHTING_THREAT_NAMES:
+        damage *= 2
+    return damage
+
+
+def active_clefairy_can_ko_mega_lucario(card: dict | None, obs_dict: dict) -> bool:
+    return card_name(card_id(card)) in MEGA_LUCARIO_NAMES and clefairy_damage_to(card, obs_dict) >= total_hp_left(card)
+
+
+def active_clefairy_should_leave(obs_dict: dict) -> bool:
+    active = active_cards(obs_dict)
+    if not active or card_name(card_id(active[0])) != "clefairy":
+        return False
+    if not opponent_has_fighting_threat(obs_dict):
+        return False
+    opponent_active_name = card_name(card_id(opponent_active_cards(obs_dict)[0])) if opponent_active_cards(obs_dict) else ""
+    return opponent_active_name not in MEGA_LUCARIO_NAMES
+
+
 def has_bench_better_than_empty_active(obs_dict: dict) -> bool:
     active = active_cards(obs_dict)
     if not active:
@@ -281,6 +332,8 @@ def should_retreat_for_bench_ko(obs_dict: dict) -> bool:
     active_card = active[0]
     active_name = card_name(card_id(active_card))
     hp = opponent_active_hp(obs_dict)
+    if active_clefairy_should_leave(obs_dict):
+        return True
     if active_needs_balloon_ko_switch(obs_dict):
         return True
     if has_bench_better_than_empty_active(obs_dict) and has_air_balloon(active_card):
@@ -302,6 +355,8 @@ def should_retreat_for_bench_ko(obs_dict: dict) -> bool:
 def should_attach_balloon_to_active(obs_dict: dict, target_card: dict | None) -> bool:
     if not is_active_card(obs_dict, target_card) or has_air_balloon(target_card):
         return False
+    if active_clefairy_should_leave(obs_dict):
+        return True
     if active_needs_balloon_ko_switch(obs_dict):
         return True
     if has_bench_better_than_empty_active(obs_dict):
@@ -331,7 +386,7 @@ def needs_lunatone_draw_now(obs_dict: dict) -> bool:
 
 
 def opponent_has_lucario_line(obs_dict: dict) -> bool:
-    return any(card_name(card_id(card)) in LUCARIO_LINE_NAMES for card in opponent_active_cards(obs_dict) + opponent_bench_cards(obs_dict))
+    return bool(opponent_seen_names(obs_dict) & LUCARIO_LINE_NAMES)
 
 
 def is_ex_card(card: dict | None) -> bool:
@@ -341,6 +396,8 @@ def is_ex_card(card: dict | None) -> bool:
 def boss_priority_target(card: dict | None, obs_dict: dict) -> bool:
     if not isinstance(card, dict):
         return False
+    if opponent_has_fighting_threat(obs_dict):
+        return active_clefairy_can_ko_mega_lucario(card, obs_dict)
     if is_ex_card(card) and active_can_ko(card, obs_dict):
         return True
     target_name = card_name(card_id(card))
@@ -359,6 +416,8 @@ def boss_priority_target(card: dict | None, obs_dict: dict) -> bool:
 
 
 def boss_has_active_ex_ko_target(obs_dict: dict) -> bool:
+    if opponent_has_fighting_threat(obs_dict):
+        return any(active_clefairy_can_ko_mega_lucario(card, obs_dict) for card in opponent_bench_cards(obs_dict))
     return any(is_ex_card(card) and active_can_ko(card, obs_dict) for card in opponent_bench_cards(obs_dict))
 
 
@@ -376,6 +435,8 @@ def boss_target_score(option: dict, obs_dict: dict) -> int:
     target = bench[int(index)]
     if not boss_priority_target(target, obs_dict):
         return -2500
+    if active_clefairy_can_ko_mega_lucario(target, obs_dict):
+        return 9800
     if card_name(card_id(target)) in BOSS_CALL_NAMES:
         return 5600 + energy_count(target) * 250
     if is_ex_card(target) and active_can_ko(target, obs_dict):
@@ -445,6 +506,13 @@ def promotion_score(card: dict | None, obs_dict: dict) -> int:
     name = card_name(card_id(card))
     if name == "lunatone":
         return -500
+    if name == "clefairy" and opponent_has_psychic_lock(obs_dict):
+        return -5000
+    if name == "clefairy" and opponent_has_fighting_threat(obs_dict):
+        opponent_active_name = card_name(card_id(opponent_active_cards(obs_dict)[0])) if opponent_active_cards(obs_dict) else ""
+        if opponent_active_name in MEGA_LUCARIO_NAMES and is_attack_ready(card, obs_dict):
+            return 6200
+        return -4200
     if name == "clefairy" and energy_count(card) == 0:
         return -1600
     if has_air_balloon(card):
@@ -621,7 +689,12 @@ def setup_bench_score(name: str, obs_dict: dict) -> int:
     elif name == "barbaracle":
         score += 760 if has_species(obs_dict, "binacle") and in_play == 0 else -500
     elif name == "clefairy":
-        score += 560 if in_play == 0 else -260
+        if opponent_has_psychic_lock(obs_dict):
+            return -5000
+        if opponent_has_fighting_threat(obs_dict):
+            score += 1500 if in_play < 2 else -120
+        else:
+            score += 560 if in_play == 0 else -260
 
     if early and name in ("solrock", "lunatone"):
         score += 500
@@ -657,7 +730,12 @@ def search_card_score(name: str, obs_dict: dict) -> int:
         else:
             score += 760 if has_species(obs_dict, "binacle") and in_play == 0 else -600
     elif name == "clefairy":
-        score += 620 if in_play == 0 else -220
+        if opponent_has_psychic_lock(obs_dict):
+            return -5000
+        if opponent_has_fighting_threat(obs_dict):
+            score += 1700 if in_play < 2 else 120
+        else:
+            score += 620 if in_play == 0 else -220
     elif name == "legacy_energy":
         score += 520
     elif name == "prism_energy":
@@ -676,6 +754,8 @@ def search_card_score(name: str, obs_dict: dict) -> int:
 def play_score(name: str, obs_dict: dict) -> int:
     score = 500 + base_card_score(name)
     if name == "boss_orders":
+        if opponent_has_fighting_threat(obs_dict):
+            return 9200 if boss_has_active_ex_ko_target(obs_dict) else -3200
         if boss_has_active_ex_ko_target(obs_dict):
             return 8800
         return 3600 if boss_has_priority_target(obs_dict) else -2200
@@ -732,6 +812,8 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
 
     if required_count <= 0:
         return -2400
+    if target == "clefairy" and opponent_has_psychic_lock(obs_dict):
+        return -7000
     if target == "okidogi" and existing_count >= 2:
         return -9000
     if existing_count >= required_count:
@@ -753,6 +835,8 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
             score += 1800 if not has_special else -900
         elif target == "clefairy":
             score += 1600 if not has_special else -900
+            if opponent_has_fighting_threat(obs_dict):
+                score += 2400
         elif target == "solrock":
             score += -900 if existing_count == 0 else -1400
             score -= 700
@@ -767,8 +851,8 @@ def attach_score(energy_id: int | None, target_card: dict | None, obs_dict: dict
             score += 2600 if has_special and not has_fighting else (780 if existing_count == 0 else -1200)
         elif target == "clefairy":
             score += 2200 if has_special and not has_fighting else (1050 if existing_count == 0 else -900)
-            if opponent_has_lucario_line(obs_dict):
-                score += 1000
+            if opponent_has_fighting_threat(obs_dict):
+                score += 2600
         elif target == "solrock" and has_species_in_play(obs_dict, "lunatone"):
             score += 220 if existing_count == 0 else -900
             if (
@@ -852,6 +936,8 @@ def score_option(option: Any, obs_dict: dict) -> int:
             active_name = card_name(card_id(active[0])) if active else ""
             if active_name == "okidogi" and not has_air_balloon(active[0]):
                 return -1700
+            if active_clefairy_should_leave(obs_dict):
+                return 9000
             if has_bench_better_than_empty_active(obs_dict):
                 return 5600
             if active_needs_balloon_ko_switch(obs_dict):
@@ -895,7 +981,7 @@ def score_option(option: Any, obs_dict: dict) -> int:
 
     # Card selection prompts such as setup, search, and to-hand use card options.
     if name:
-        if context == 4 and int(option.get("area") or -1) == 5:
+        if context in (3, 4) and int(option.get("area") or -1) == 5:
             return promotion_score(card, obs_dict)
         if current_effect_name(obs_dict) == "hilda":
             if name == "barbaracle":
