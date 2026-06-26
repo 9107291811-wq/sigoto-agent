@@ -58,6 +58,8 @@ def option_card(obs_dict: dict, option: dict) -> dict | None:
         cards = player.get("active") or []
     elif int(area) == 5:
         cards = player.get("bench") or []
+    elif int(area) == 12:
+        cards = current_state(obs_dict).get("looking") or []
     else:
         cards = []
 
@@ -107,6 +109,22 @@ def count_species(obs_dict: dict, species: str, include_hand: bool = True) -> in
     ids = SPECIES_IDS[species]
     cards = setup_relevant_cards(obs_dict) if include_hand else in_play_cards(obs_dict)
     return sum(1 for card in cards if card_id(card) in ids)
+
+
+def count_species_in_play(obs_dict: dict, species: str) -> int:
+    return count_species(obs_dict, species, include_hand=False)
+
+
+def energy_count(card: dict | None) -> int:
+    if not isinstance(card, dict):
+        return 0
+    return len(card.get("energyCards") or card.get("energies") or [])
+
+
+def attached_energy_ids(card: dict | None) -> list[int]:
+    if not isinstance(card, dict):
+        return []
+    return [card_id(energy) for energy in card.get("energyCards") or []]
 
 
 def rough_turn(obs_dict: dict) -> int:

@@ -32,7 +32,6 @@ def choose_indices(obs_dict: dict) -> list[int]:
             reverse=True,
         )
     ]
-
     if os.getenv("SIGOTO_DEBUG") == "1":
         print("select:", select.get("type"), select.get("context"), "count:", count)
         for i, score in sorted(scored, key=lambda item: item[1], reverse=True)[:8]:
