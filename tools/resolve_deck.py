@@ -19,6 +19,7 @@ NAME_ALIASES = {
 
 def norm(value):
     text = "" if value is None else str(value)
+    text = text.replace("’", "'").replace("‘", "'").replace("`", "'")
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = text.lower().strip()
